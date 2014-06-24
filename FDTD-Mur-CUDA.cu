@@ -234,7 +234,7 @@ int main()
 	cin >> cx >> cy;
 
 	int size = sizeof(double)*width*height*time;
-	double *d_ezf; double *d_hxf; double *d_hyf;
+	double *d_ezf, *d_hxf, *d_hyf;
 	cudaMalloc((void**)&d_ezf, size);
 	cudaMalloc((void**)&d_hxf, size);
 	cudaMalloc((void**)&d_hyf, size);
@@ -266,17 +266,17 @@ int main()
 
 	for (int t = 2; t < time; t++)
 	{
-		calcEz<<<DimGrid, DimBlock >>>(d_ezf, d_hxf, d_hyf, width, height, cx, cy, t, dl, dt, a, b);
+		calcEz<<<DimGrid, DimBlock>>>(d_ezf, d_hxf, d_hyf, width, height, cx, cy, t, dl, dt, a, b);
 
 		//Boundary conditions
-		calcLeftBoundary<<<dg_h, db_h >>>(d_ezf, width, height, t, coe1, coe2, coe3);
-		calcRightBoundary<<<dg_h, db_h >>>(d_ezf, width, height, t, coe1, coe2, coe3);
-		calcDownBoundary<<<dg_w, db_w >>>(d_ezf, width, height, t, coe1, coe2, coe3);
-		calcUpBoundary<<<dg_w, db_w >>>(d_ezf, width, height, t, coe1, coe2, coe3);
+		calcLeftBoundary<<<dg_h, db_h>>>(d_ezf, width, height, t, coe1, coe2, coe3);
+		calcRightBoundary<<<dg_h, db_h>>>(d_ezf, width, height, t, coe1, coe2, coe3);
+		calcDownBoundary<<<dg_w, db_w>>>(d_ezf, width, height, t, coe1, coe2, coe3);
+		calcUpBoundary<<<dg_w, db_w>>>(d_ezf, width, height, t, coe1, coe2, coe3);
 		//Corner conditions
-		calcCorner<<<dg_cor, db_cor >>>(d_ezf, width, height, t, coe_cor);
+		calcCorner<<<dg_cor, db_cor>>>(d_ezf, width, height, t, coe_cor);
 
-		calcH<<<DimGrid, DimBlock >>>(d_ezf, d_hxf, d_hyf, width, height, t, dl, p, q);
+		calcH<<<DimGrid, DimBlock>>>(d_ezf, d_hxf, d_hyf, width, height, t, dl, p, q);
 	}
 
 	double *output = (double*)malloc(size);

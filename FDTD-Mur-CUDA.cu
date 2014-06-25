@@ -1,4 +1,4 @@
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
 //  2D FDTD solution for Mur's Absorbing Boundary Condition
 //  Using GPU acceleration (CUDA implementation)
 //       Simple harmonic excitation source
@@ -100,108 +100,86 @@ __global__ void calcH(double *ezf, double *hxf, double *hxfm1, double *hyf, doub
 	hyf[width*thy + thx] = p*hyfm1[width*thy + thx] + q*(ez[tx + 1][ty] - ez[tx][ty]) / dl;
 }
 
-__global__ void calcLeftBoundary(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
+__global__ void calcVerticalBoundaries(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
 {
 	int tx = threadIdx.x;
 	int thx = blockIdx.x*blockDim.x + tx;
 
 	__shared__ double left[BLOCK_LENGTH + 2];
-	__shared__ double inner[BLOCK_LENGTH + 2];
+	__shared__ double l_inner[BLOCK_LENGTH + 2];
 	left[tx + 1] = ezfm1[width*thx];
-	inner[tx + 1] = ezfm1[width*thx + 1];
+	l_inner[tx + 1] = ezfm1[width*thx + 1];
+
+	__shared__ double right[BLOCK_LENGTH + 2];
+	__shared__ double r_inner[BLOCK_LENGTH + 2];
+	right[tx + 1] = ezfm1[width*(thx + 1) - 1];
+	r_inner[tx + 1] = ezfm1[width*(thx + 1) - 2];
+
 	if (tx == 0 && thx != 0)
 	{
 		left[0] = ezfm1[width*(thx - 1)];
-		inner[0] = ezfm1[width*(thx - 1) + 1];
+		l_inner[0] = ezfm1[width*(thx - 1) + 1];
+
+		right[0] = ezfm1[width*thx - 1];
+		r_inner[0] = ezfm1[width*thx - 2];
 	}
 	if (tx == BLOCK_LENGTH - 1 && thx != height - 1)
 	{
 		left[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 1)];
-		inner[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 1) + 1];
-	}
+		l_inner[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 1) + 1];
 
-	__syncthreads();
-
-	if (!(thx == 0 || thx == height - 1))
-		ezf[width*thx] = 0 - ezfm2[width*thx + 1] + coe1*(ezf[width*thx + 1] + ezfm2[width*thx]) + coe2*(left[tx + 1] + inner[tx + 1]) + coe3*(left[tx + 2] - 2 * left[tx + 1] + left[tx] + inner[tx + 2] - 2 * inner[tx + 1] + inner[tx]);
-}
-
-__global__ void calcRightBoundary(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
-{
-	int tx = threadIdx.x;
-	int thx = blockIdx.x*blockDim.x + tx;
-
-	__shared__ double right[BLOCK_LENGTH + 2];
-	__shared__ double inner[BLOCK_LENGTH + 2];
-	right[tx + 1] = ezfm1[width*(thx + 1) - 1];
-	inner[tx + 1] = ezfm1[width*(thx + 1) - 2];
-	if (tx == 0 && thx != 0)
-	{
-		right[0] = ezfm1[width*thx - 1];
-		inner[0] = ezfm1[width*thx - 2];
-	}
-	if (tx == BLOCK_LENGTH - 1 && thx != height - 1)
-	{
 		right[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 2) - 1];
-		inner[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 2) - 2];
+		r_inner[BLOCK_LENGTH + 1] = ezfm1[width*(thx + 2) - 2];
 	}
 
 	__syncthreads();
 
 	if (!(thx == 0 || thx == height - 1))
-		ezf[width*thx + width - 1] = 0 - ezfm2[width*(thx + 1) - 2] + coe1*(ezf[width*(thx + 1) - 2] + ezfm2[width*(thx + 1) - 1]) + coe2*(right[tx + 1] + inner[tx + 1]) + coe3*(right[tx + 2] - 2 * right[tx + 1] + right[tx] + inner[tx + 2] - 2 * inner[tx + 1] + inner[tx]);
+	{
+		ezf[width*thx] = 0 - ezfm2[width*thx + 1] + coe1*(ezf[width*thx + 1] + ezfm2[width*thx]) + coe2*(left[tx + 1] + l_inner[tx + 1]) + coe3*(left[tx + 2] - 2 * left[tx + 1] + left[tx] + l_inner[tx + 2] - 2 * l_inner[tx + 1] + l_inner[tx]);
+		ezf[width*thx + width - 1] = 0 - ezfm2[width*(thx + 1) - 2] + coe1*(ezf[width*(thx + 1) - 2] + ezfm2[width*(thx + 1) - 1]) + coe2*(right[tx + 1] + r_inner[tx + 1]) + coe3*(right[tx + 2] - 2 * right[tx + 1] + right[tx] + r_inner[tx + 2] - 2 * r_inner[tx + 1] + r_inner[tx]);
+	}
 }
 
-__global__ void calcDownBoundary(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
+__global__ void calcHorizontalBoundaries(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
 {
 	int tx = threadIdx.x;
 	int thx = blockIdx.x*blockDim.x + tx;
 
 	__shared__ double down[BLOCK_LENGTH + 2];
-	__shared__ double inner[BLOCK_LENGTH + 2];
+	__shared__ double d_inner[BLOCK_LENGTH + 2];
 	down[tx + 1] = ezfm1[thx];
-	inner[tx + 1] = ezfm1[width + thx];
+	d_inner[tx + 1] = ezfm1[width + thx];
+
+	__shared__ double up[BLOCK_LENGTH + 2];
+	__shared__ double u_inner[BLOCK_LENGTH + 2];
+	up[tx + 1] = ezfm1[width*(height - 1) + thx];
+	u_inner[tx + 1] = ezfm1[width*(height - 2) + thx];
+
 	if (tx == 0 && thx != 0)
 	{
 		down[0] = ezfm1[thx - 1];
-		inner[0] = ezfm1[width + thx - 1];
+		d_inner[0] = ezfm1[width + thx - 1];
+
+		up[0] = ezfm1[width*(height - 1) + thx - 1];
+		u_inner[0] = ezfm1[width*(height - 2) + thx - 1];
 	}
 	if (tx == BLOCK_LENGTH - 1 && thx != width - 1)
 	{
 		down[BLOCK_LENGTH + 1] = ezfm1[thx + 1];
-		inner[BLOCK_LENGTH + 1] = ezfm1[width + thx + 1];
-	}
+		d_inner[BLOCK_LENGTH + 1] = ezfm1[width + thx + 1];
 
-	__syncthreads();
-
-	if (!(thx == 0 || thx == width - 1))
-		ezf[thx] = 0 - ezfm2[width + thx] + coe1*(ezf[width + thx] + ezfm2[thx]) + coe2*(down[tx + 1] + inner[tx + 1]) + coe3*(down[tx + 2] - 2 * down[tx + 1] + down[tx] + inner[tx + 2] - 2 * inner[tx + 1] + inner[tx]);
-}
-
-__global__ void calcUpBoundary(double *ezf, double *ezfm1, double *ezfm2, int width, int height, double coe1, double coe2, double coe3)
-{
-	int tx = threadIdx.x;
-	int thx = blockIdx.x*blockDim.x + tx;
-
-	__shared__ double up[BLOCK_LENGTH + 2];
-	__shared__ double inner[BLOCK_LENGTH + 2];
-	up[tx + 1] = ezfm1[width*(height - 1) + thx];
-	inner[tx + 1] = ezfm1[width*(height - 2) + thx];
-	if (tx == 0 && thx != 0)
-	{
-		up[0] = ezfm1[width*(height - 1) + thx - 1];
-		inner[0] = ezfm1[width*(height - 2) + thx - 1];
-	}
-	if (tx == BLOCK_LENGTH - 1 && thx != width - 1)
-	{
 		up[BLOCK_LENGTH + 1] = ezfm1[width*(height - 1) + thx + 1];
-		inner[BLOCK_LENGTH + 1] = ezfm1[width*(height - 2) + thx + 1];
+		u_inner[BLOCK_LENGTH + 1] = ezfm1[width*(height - 2) + thx + 1];
 	}
 
 	__syncthreads();
 
 	if (!(thx == 0 || thx == width - 1))
-		ezf[width*(height - 1) + thx] = 0 - ezfm2[width*(height - 2) + thx] + coe1*(ezf[width*(height - 2) + thx] + ezfm2[width*(height - 1) + thx]) + coe2*(up[tx + 1] + inner[tx + 1]) + coe3*(up[tx + 2] - 2 * up[tx + 1] + up[tx] + inner[tx + 2] - 2 * inner[tx + 1] + inner[tx]);
+	{
+		ezf[thx] = 0 - ezfm2[width + thx] + coe1*(ezf[width + thx] + ezfm2[thx]) + coe2*(down[tx + 1] + d_inner[tx + 1]) + coe3*(down[tx + 2] - 2 * down[tx + 1] + down[tx] + d_inner[tx + 2] - 2 * d_inner[tx + 1] + d_inner[tx]);
+		ezf[width*(height - 1) + thx] = 0 - ezfm2[width*(height - 2) + thx] + coe1*(ezf[width*(height - 2) + thx] + ezfm2[width*(height - 1) + thx]) + coe2*(up[tx + 1] + u_inner[tx + 1]) + coe3*(up[tx + 2] - 2 * up[tx + 1] + up[tx] + u_inner[tx + 2] - 2 * u_inner[tx + 1] + u_inner[tx]);
+	}
 }
 
 __global__ void calcCorner(double *ezf, double *ezfm1, int width, int height, double coe)
@@ -219,9 +197,9 @@ __global__ void calcCorner(double *ezf, double *ezfm1, int width, int height, do
 
 int main()
 {
-	int width = 128;
-	int height = 128;
-	int time = 400;
+	int width = 1024;
+	int height = 1024;
+	int time = 2000;
 	int cx = 32; int cy = 32;
 	double dl = 1e-6;
 	double st = 1 / SQRT2;
@@ -264,7 +242,7 @@ int main()
 	dim3 dg_w((width - 1) / BLOCK_LENGTH + 1, 1, 1);
 	dim3 db_cor(4, 1, 1); dim3 dg_cor(1, 1, 1);
 
-	for (int t = 0; t<time; t++)
+	for (int t = 0; t < time; t++)
 	{
 		ezfm2 = ezfm1;
 		ezfm1 = ezf;
@@ -274,20 +252,18 @@ int main()
 		hyfm1 = hyf;
 		cudaMalloc((void**)&hyf, size); cudaMemset(hyf, 0, size);
 
-		calcEz<<<DimGrid, DimBlock >>>(ezf, ezfm1, hxfm1, hyfm1, width, height, cx, cy, t, dl, dt, a, b);
+		calcEz<<<DimGrid, DimBlock>>>(ezf, ezfm1, hxfm1, hyfm1, width, height, cx, cy, t, dl, dt, a, b);
 
 		//Boundary conditions
-		calcLeftBoundary<<<dg_h, db_h >>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
-		calcRightBoundary<<<dg_h, db_h >>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
-		calcDownBoundary<<<dg_w, db_w >>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
-		calcUpBoundary<<<dg_w, db_w >>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
+		calcVerticalBoundaries<<<dg_h, db_h>>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
+		calcHorizontalBoundaries<<<dg_w, db_w>>>(ezf, ezfm1, ezfm2, width, height, coe1, coe2, coe3);
 		//Corner conditions
-		calcCorner<<<dg_cor, db_cor >>>(ezf, ezfm1, width, height, coe_cor);
+		calcCorner<<<dg_cor, db_cor>>>(ezf, ezfm1, width, height, coe_cor);
 
-		calcH <<<DimGrid, DimBlock >>>(ezf, hxf, hxfm1, hyf, hyfm1, width, height, dl, p, q);
-
+		calcH<<<DimGrid, DimBlock>>>(ezf, hxf, hxfm1, hyf, hyfm1, width, height, dl, p, q);
+		
 		//Output -------
-		//You can add code here to copy data from array 'ezf', 'hxf' and 'hyf' in device to host in order to output.
+		//You can add code here to copy data in array 'ezf', 'hxf' and 'hyf' out to output.
 
 		cudaFree(ezfm2); cudaFree(hxfm1); cudaFree(hyfm1);
 	}
@@ -299,11 +275,11 @@ int main()
 	duration = t_end - t_start;
 	cout << "Time using: " << duration << " ms." << endl << endl;
 
-	for (int i = 0; i<height; i++)
+	for(int i=0;i<height;i++)
 	{
-		for (int j = 0; j<width; j++)
-			cout << output[i*width + j] << " ";
-		cout << endl;
+		for(int j=0;j<width;j++)
+			cout<<output[i*width+j]<<" ";
+		cout<<endl;
 	}
 
 	free(output);
